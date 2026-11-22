@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>英語 1分間クイック・レスポンス</title>
+<style>
+  :root{
+    --bg:#1E1E1E; --panel:#2a2a2a; --line:#3a3a3a; --text:#f0f0f0; --muted:#a0a0a0;
+    --accent:#4fa3ff; --ok:#3ecf7a; --ng:#ff6b6b; --warn:#ffc04d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:"Segoe UI","Hiragino Sans","Meiryo",sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center}
+  header{width:100%;max-width:900px;display:flex;justify-content:space-between;align-items:center;padding:16px}
+  h1{font-size:18px;margin:0;color:var(--muted);font-weight:600}
+  main{width:100%;max-width:900px;padding:0 16px 32px;flex:1;display:flex;flex-direction:column;gap:16px}
+  .screen{display:none;flex-direction:column;gap:16px}
+  .screen.active{display:flex}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:20px}
+  button{font:inherit;border:none;border-radius:10px;padding:14px 22px;font-size:18px;font-weight:700;cursor:pointer}
+  .primary{background:var(--accent);color:#06121f}
+  .secondary{background:#444;color:var(--text)}
+  .next{background:var(--warn);color:#2a1d00;font-size:22px;padding:18px}
+  .topbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+  .timer{font-size:44px;font-weight:800;font-variant-numeric:tabular-nums}
+  .timer.low{color:var(--ng)}
+  .bar{height:10px;background:#333;border-radius:6px;overflow:hidden}
+  .bar>div{height:100%;background:var(--accent);transition:width .2s linear}
+  .stat{font-size:20px;color:var(--muted)}
+  .stat b{color:var(--text);font-size:26px}
+  .card{background:#fafafa;color:#111;border-radius:18px;min-height:220px;display:flex;align-items:center;justify-content:center;text-align:center;padding:28px;font-size:clamp(28px,5vw,48px);font-weight:700;line-height:1.3;transition:transform .15s, box-shadow .15s}
+  .card.ok{box-shadow:0 0 0 6px var(--ok)}
+  .card.flip{transform:scale(.97)}
+  .heard{min-height:56px;font-size:22px;padding:14px 18px;border-radius:12px;background:#141414;border:1px solid var(--line)}
+  .heard .label{font-size:13px;color:var(--muted);display:block;margin-bottom:4px}
+  .feedback{min-height:28px;font-size:17px;color:var(--ng);font-weight:600}
+  .mic{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:15px}
+  .dot{width:12px;height:12px;border-radius:50%;background:#555}
+  .dot.on{background:var(--ng);animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.3}}
+  .hint{color:var(--muted);font-size:14px;line-height:1.6}
+  .big{font-size:56px;font-weight:800;text-align:center}
+  table{width:100%;border-collapse:collapse;font-size:15px}
+  th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}
+  th{color:var(--muted);font-weight:600}
+  .r-ok{color:var(--ok);font-weight:700}
+  .r-ng{color:var(--ng);font-weight:700}
+  .cmt{color:var(--muted);font-size:14px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  label.opt{display:flex;gap:8px;align-items:center;color:var(--muted)}
+  .warnbox{background:#3a2a10;border:1px solid var(--warn);color:var(--warn);padding:12px;border-radius:10px;display:none}
+  .tablewrap{overflow-x:auto}
+  @media (max-width:600px){.timer{font-size:34px}.card{min-height:170px}}
+</style>
+</head>
+<body>
+<header><h1>English Quick Response — 1 minute</h1><span class="mic"><span class="dot" id="micDot"></span><span id="micText">マイク停止中</span></span></header>
+<main>
+
+  <section class="screen active" id="startScreen">
+    <div class="panel">
+      <div class="big">1分間チャレンジ</div>
+      <p class="hint" style="text-align:center">英語の質問がランダムに表示されます。<b>主語と動詞のある英文</b>で答えてください。<br>
+      文法的に正しく答えると自動で次の問題へ。間違えたら言い直しOK。<br>認識されないときは「回答終了 → 次へ」ボタン（スペースキーでも可）。</p>
+      <div class="warnbox" id="noSpeech">このブラウザは音声認識に対応していません。Google Chrome または Microsoft Edge で開いてください。</div>
+      <div class="row" style="justify-content:center;margin-top:12px">
+        <button class="primary" id="startBtn">スタート</button>
+      </div>
+      <div class="row" style="justify-content:center;margin-top:14px;gap:24px">
+        <label class="opt"><input type="checkbox" id="optFull" checked> 完全な文で答えさせる</label>
+        <label class="opt"><input type="checkbox" id="optHint"> 解答例を表示（練習用）</label>
+      </div>
+    </div>
+  </section>
+
+  <section class="screen" id="quizScreen">
+    <div class="topbar">
+      <div class="timer" id="timer">60.0</div>
+      <div class="stat">正解 <b id="score">0</b> ／ 出題 <b id="count">0</b></div>
+    </div>
+    <div class="bar"><div id="bar" style="width:100%"></div></div>
+    <div class="card" id="card">—</div>
+    <div class="hint" id="hintLine" style="display:none"></div>
+    <div class="heard"><span class="label">聞き取った回答</span><span id="heard"></span></div>
+    <div class="feedback" id="feedback"></div>
+    <button class="next" id="nextBtn">回答終了 → 次へ</button>
+    <div class="row"><button class="secondary" id="stopBtn">中止</button></div>
+  </section>
+
+  <section class="screen" id="resultScreen">
+    <div class="panel">
+      <div class="big"><span id="finalScore">0</span> 問正解</div>
+      <p class="hint" style="text-align:center" id="finalSub"></p>
+      <div class="row" style="justify-content:center"><button class="primary" id="againBtn">もう一度</button></div>
+    </div>
+    <div class="panel tablewrap">
+      <table>
+        <thead><tr><th>#</th><th>問題</th><th>生徒の回答</th><th>判定</th><th>コメント</th></tr></thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<script>
+const TIME_LIMIT = 60;   // 秒
+const SETTLE_MS  = 800;  // 文の型に合ってから、言い終わりを待つ時間（ミリ秒）
+
+/* =========================================================
+   文の部品（正規表現）。回答は小文字化・短縮形展開済み（I'm → i am, don't → do not）
+   ========================================================= */
+const NUMW = "one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve";
+const MONTH = "(january|february|march|april|may|june|july|august|september|october|november|december)";
+const SLOT = {
+  X:    "\\S+(?: \\S+)*",
+  TIME: `(about |around )?(\\d{1,2}( \\d{2})?(am|pm)?|${NUMW}|(half|quarter) past \\S+)( o'clock| fifteen| thirty| forty five| forty| twenty| ten| \\d{2})?( (a m|p m|am|pm|in the morning|in the evening|at night))?`,
+  DATE: `(on |in )?(the \\S+ of )?${MONTH}( the)?( \\S+)?`,
+  DUR:  `(for )?(about |around |only )?(\\S+ )?(and a half )?(hour|hours|minute|minutes)( and (a half|\\S+ minutes))?( a day| every day| on weekdays)?`,
+  WHEN: `(right |just )?(after|before|at|in|on|every|during) \\S+(?: \\S+)*`,
+};
+const FREQ = "(usually |always |often |sometimes )?";
+
+/* =========================================================
+   問題データ
+   q:     問題文
+   ex:    解答例（ヒント・結果画面に表示）
+   full:  完全な文として正解にする型
+   short: 「完全な文で答えさせる」をOFFにしたときに追加で認める型
+   habit: 習慣を聞く問題（現在進行形で答えると×）
+   ========================================================= */
+const QUESTIONS = [
+  { q:"When is your birthday?", ex:"My birthday is May 5th.",
+    full:["my birthday is {DATE}","it is {DATE}"], short:["{DATE}"] },
+  { q:"Who is your hero?", ex:"My hero is my father.",
+    full:["my hero is {X}","{X} is my hero"], short:["{X}"] },
+  { q:"What's your dream?", ex:"My dream is to be a teacher.",
+    full:["my dream is to (be|become) {X}","my dream is to {X}","my dream is (being|becoming) {X}","i want to (be|become) {X}"], short:["{X}"] },
+  { q:"What time do you usually get up?", ex:"I usually get up at six thirty.", habit:true,
+    full:[`i ${FREQ}(get up|wake up) at {TIME}( every (morning|day))?`], short:["(at )?{TIME}"] },
+  { q:"What do you usually have for breakfast?", ex:"I usually have rice and miso soup.", habit:true,
+    full:[`i ${FREQ}(have|eat) {X}`], short:["{X}"] },
+  { q:"When do you do your homework?", ex:"I do my homework after dinner.", habit:true,
+    full:[`i ${FREQ}do (my homework|it|homework) {WHEN}`], short:["{WHEN}"] },
+  { q:"How long do you play video games a day?", ex:"I play video games for two hours a day.", habit:true,
+    full:[`i ${FREQ}play (video games |games |them )?{DUR}`,"i do not play (video games|games|them)( at all)?"], short:["{DUR}"] },
+  { q:"What time do you go to bed?", ex:"I go to bed at eleven.", habit:true,
+    full:[`i ${FREQ}(go to bed|go to sleep|sleep) at {TIME}( every night)?`], short:["(at )?{TIME}"] },
+  { q:"What subject do you like?", ex:"I like English.",
+    full:["i like {X}","my favorite subject is {X}"], short:["{X}"] },
+  { q:"What club are you in?", ex:"I'm in the tennis club.",
+    full:["i am in the {X}","i belong to the {X}","i am a member of the {X}","i am not in any clubs?","i do not belong to any clubs?"], short:["{X}"] },
+  { q:"What's your favorite school event?", ex:"My favorite school event is the sports day.",
+    full:["my favorite school event is {X}","i like {X}","it is {X}"], short:["{X}"] },
+  { q:"What do you do in your free time?", ex:"I read comic books in my free time.", habit:true,
+    full:[`(in my free time )?i ${FREQ}{X}`], short:["{X}"] },
+  { q:"What sport do you like?", ex:"I like soccer.",
+    full:["i like {X}","my favorite sport is {X}"], short:["{X}"] },
+  { q:"What's your favorite character?", ex:"My favorite character is Doraemon.",
+    full:["my favorite character is {X}","i like {X}","it is {X}"], short:["{X}"] },
+  { q:"What's your favorite thing in your house?", ex:"My favorite thing in my house is my bed.",
+    full:["my favorite thing( in my house| in the house)? is {X}","i like {X}","it is {X}"], short:["{X}"] },
+  { q:"What do you want for Christmas?", ex:"I want a new game for Christmas.",
+    full:["i want {X}","i would like {X}"], short:["{X}"] },
+  { q:"What do you want to do this winter?", ex:"I want to go skiing this winter.",
+    full:["i want to {X}","i would like to {X}"], short:["(to )?{X}"] },
+  { q:"Where do you want to go?", ex:"I want to go to Hokkaido.",
+    full:["i want to go {X}","i would like to go {X}"], short:["(to )?{X}"] },
+  { q:"Where do you want to go this weekend?", ex:"I want to go to the park this weekend.",
+    full:["i want to go {X}","i would like to go {X}"], short:["(to )?{X}"] },
+  { q:"Which country do you want to visit?", ex:"I want to visit Canada.",
+    full:["i want to (visit|go to) {X}","i would like to (visit|go to) {X}"], short:["{X}"] },
+];
+
+/* =========================================================
+   よくある文法ミスの検出（見つかったら×、理由を表示）
+   ========================================================= */
+const VERBS = "go|visit|play|be|become|do|eat|see|watch|have|make|travel|stay|read|sleep|ski|skate|swim|buy|get|study|live|work|meet|enjoy|take";
+const ERRORS = [
+  [new RegExp(`\\bwant (${VERBS})\\b`), "want の後に動詞を続けるときは want to ＋動詞の原形（例: I want to go 〜）"],
+  [/\b(want|like|would like) to (?!sing\b|bring\b)\S+(ing|ed)\b/, "to の後は動詞の原形（例: want to play）"],
+  [/\bi (usually |always |often |sometimes |never )?(gets|goes|has|eats|does|plays|likes|wants|watches|wakes|sleeps|reads|studies|belongs|visits|enjoys|is|are)\b/, "主語が I のとき、動詞に s はつけない（is / are ではなく am）"],
+  [/\bi am (like|want|go|play|have|get|eat|do|belong|watch|read|sleep|wake|usually|always|often)\b/, "be動詞（am）と一般動詞を一緒に使わない"],
+  [new RegExp(`\\blike (${VERBS}|listen|dance|run|draw|cook|sing)\\b`), "like の後に動詞を続けるときは 〜ing か to ＋動詞の原形（例: I like playing 〜）"],
+  [/\bgo to the bed\b/, "go to bed（the は不要）"],
+  [/\bgo to (home|there|here|abroad|downtown)\b/, "home / there / abroad の前に to は不要"],
+  [/\bgo (to )?(shopping|skiing|camping|fishing|swimming|skating) to\b/, "go 〜ing の後の場所は in / at など（例: go skiing in Nagano）"],
+  [/\bvisit to\b/, "visit の後に to は不要（visit ＋場所）"],
+  [/\bdream is (a|an|be|become)\b/, "My dream is to be 〜（夢は「〜になること」）"],
+  [/\byour (birthday|hero|dream|favorite|house|homework|free time)\b/, "自分のことを答えるときは your ではなく my"],
+  [/\b(1|one|an|a) hours\b/, "1時間は hour（単数）"],
+  [/\b([2-9]|1\d|two|three|four|five|six|seven|eight|nine|ten) hour\b/, "2時間以上は hours（複数）"],
+  [/\bi am (?!in\b|a member\b|not\b)(the |a )?\S+ (club|team)\b/, "「〜部に入っている」は I'm in the 〜 club（in が必要）"],
+  [/\b(in|to) (?!the\b|any\b|a\b)\S+ club\b/, "club の前に the をつける（I'm in the 〜 club）"],
+  [new RegExp(`\\bon ${MONTH}$`), "月だけを言うときは in（例: in May）"],
+  [new RegExp(`\\bin ${MONTH} \\S+`), "日付まで言うときは on（例: on May 5th）"],
+  [/\b(get|wake) up (?!at\b)(\d|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)/, "時刻の前に at が必要（例: get up at 6）"],
+  [/\bgo to bed (?!at\b)(\d|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)/, "時刻の前に at が必要（例: go to bed at 11）"],
+];
+const HABIT_ERROR = [/\bi am \S+ing\b/, "ふだんの習慣は現在形で答える（例: I read 〜 ／ I get up 〜）"];
+
+/* ---------- 正規化 ---------- */
+const CONTRACTIONS = {
+  "i'm":"i am","you're":"you are","he's":"he is","she's":"she is","it's":"it is","we're":"we are","they're":"they are",
+  "that's":"that is","what's":"what is","there's":"there is","don't":"do not","doesn't":"does not","didn't":"did not",
+  "can't":"can not","cannot":"can not","isn't":"is not","aren't":"are not","wasn't":"was not","weren't":"were not",
+  "haven't":"have not","hasn't":"has not","won't":"will not","i'll":"i will","i'd":"i would","i've":"i have","let's":"let us",
+  "favourite":"favorite"
+};
+const FILLERS = new Set(["um","uh","er","erm","ah","hmm","uhm","eh"]);
+const LEAD = new Set(["well","oh","so","ok","okay","yes","yeah"]);
+function norm(s){
+  let w = s.toLowerCase().replace(/[’`]/g,"'").replace(/[.,!?;:"]/g," ").split(/\s+/).filter(Boolean)
+    .map(x=>CONTRACTIONS[x]||x).join(" ").split(" ").filter(x=>x && !FILLERS.has(x));
+  while(w.length && LEAD.has(w[0])) w.shift();
+  return w.join(" ");
+}
+const compile = t => new RegExp("^" + t.replace(/\{(\w+)\}/g,(_,k)=>"(?:"+SLOT[k]+")") + "$");
+QUESTIONS.forEach(item=>{ item.fullRe = item.full.map(compile); item.shortRe = item.short.map(compile); });
+
+/* ---------- 判定 ---------- */
+// 戻り値: {ok:true} / {ok:false, reason:"..."}
+function judge(heard, item){
+  const s = norm(heard);
+  if(!s) return {ok:false, reason:"無回答"};
+  const errs = [...ERRORS, ...(item.habit?[HABIT_ERROR]:[])];
+  for(const [re,msg] of errs) if(re.test(s)) return {ok:false, reason:msg};
+  if(item.fullRe.some(re=>re.test(s))) return {ok:true};
+  if(item.shortRe.some(re=>re.test(s))){
+    if(!$("optFull").checked) return {ok:true};
+    return {ok:false, reason:"主語と動詞のある文で答えよう（例: "+item.ex+"）"};
+  }
+  return {ok:false, reason:"質問に合った文の形になっていない（例: "+item.ex+"）"};
+}
+
+/* ---------- 状態 ---------- */
+const $ = id => document.getElementById(id);
+let order=[], idx=0, score=0, log=[], endAt=0, tick=null, running=false, heardText="", locked=false, settleTimer=null;
+
+function show(id){ document.querySelectorAll(".screen").forEach(s=>s.classList.toggle("active", s.id===id)); }
+function shuffle(arr){ const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+
+function start(){
+  order = shuffle(QUESTIONS); idx=0; score=0; log=[]; running=true;
+  $("score").textContent=0; $("count").textContent=0;
+  show("quizScreen");
+  showQuestion();
+  endAt = performance.now() + TIME_LIMIT*1000;
+  tick = setInterval(updateTimer, 100);
+  startRec();
+}
+function showQuestion(){
+  if(idx>=order.length) order = order.concat(shuffle(QUESTIONS));
+  const item = order[idx];
+  $("card").textContent = item.q;
+  $("card").classList.remove("ok");
+  $("count").textContent = idx+1;
+  $("hintLine").style.display = $("optHint").checked ? "block" : "none";
+  $("hintLine").textContent = "例: " + item.ex;
+  setHeard(""); setFeedback(""); locked=false;
+  resetRecBuffer();
+}
+function setHeard(t){ heardText=t; $("heard").textContent=t; }
+function setFeedback(t){ $("feedback").textContent = t ? "× " + t : ""; }
+
+function advance(result){
+  if(!running || locked) return;
+  locked = true; clearTimeout(settleTimer);
+  log.push({q:order[idx].q, ex:order[idx].ex, heard:heardText, ok:result.ok, reason:result.reason||""});
+  if(result.ok){ score++; $("score").textContent=score; $("card").classList.add("ok"); }
+  $("card").classList.add("flip");
+  setTimeout(()=>{ $("card").classList.remove("flip"); if(running){ idx++; showQuestion(); } }, result.ok?350:150);
+}
+function updateTimer(){
+  const left = Math.max(0,(endAt-performance.now())/1000);
+  $("timer").textContent = left.toFixed(1);
+  $("timer").classList.toggle("low", left<=10);
+  $("bar").style.width = (left/TIME_LIMIT*100)+"%";
+  if(left<=0) finish();
+}
+function finish(){
+  if(!running) return;
+  if(!locked && heardText){ const r=judge(heardText,order[idx]); log.push({q:order[idx].q, ex:order[idx].ex, heard:heardText, ok:r.ok, reason:r.reason||""}); if(r.ok) score++; }
+  running=false; clearInterval(tick); clearTimeout(settleTimer); stopRec();
+  $("finalScore").textContent = score;
+  $("finalSub").textContent = `${log.length}問に挑戦しました`;
+  $("resultBody").innerHTML = log.map((r,i)=>
+    `<tr><td>${i+1}</td><td>${esc(r.q)}</td><td>${esc(r.heard)||'<span style="color:#777">（無回答）</span>'}</td>
+     <td class="${r.ok?'r-ok':'r-ng'}">${r.ok?'○':'×'}</td>
+     <td class="cmt">${r.ok?'':esc(r.reason)}</td></tr>`).join("");
+  show("resultScreen");
+}
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---------- 音声認識 ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec=null, recBase=0, recLen=0;
+if(!SR) $("noSpeech").style.display="block";
+
+function startRec(){
+  if(!SR) return;
+  rec = new SR();
+  rec.lang="en-US"; rec.continuous=true; rec.interimResults=true; rec.maxAlternatives=1;
+  rec.onresult = e => {
+    if(!running || locked) return;
+    recLen = e.results.length;
+    let text="", isFinal=true;
+    for(let i=recBase;i<e.results.length;i++){ text += e.results[i][0].transcript + " "; if(!e.results[i].isFinal) isFinal=false; }
+    text = text.trim();
+    if(!text) return;
+    setHeard(text);
+    clearTimeout(settleTimer);
+    const item = order[idx];
+    const r = judge(text, item);
+    if(isFinal){
+      // 言い終わった（区切りが確定した）→ 判定
+      if(r.ok) advance(r);
+      else { setFeedback(r.reason); recBase = e.results.length; } // 言い直しは新しい発話として判定
+    } else if(r.ok){
+      // 途中でも型に合っていれば、言い終わりを少し待ってから正解にする
+      settleTimer = setTimeout(()=>{ if(!locked && heardText===text) advance(r); }, SETTLE_MS);
+    }
+  };
+  rec.onstart = ()=>setMic(true);
+  rec.onend = ()=>{ setMic(false); if(running){ recBase=0; recLen=0; try{rec.start();}catch(_){} } };
+  rec.onerror = e => { if(e.error==="not-allowed") alert("マイクの使用が許可されていません。ブラウザの設定でマイクを許可してください。"); };
+  recBase=0; recLen=0;
+  try{ rec.start(); }catch(_){}
+}
+function resetRecBuffer(){ recBase = recLen; }
+function stopRec(){ if(rec){ rec.onend=null; try{rec.abort();}catch(_){} } setMic(false); recLen=0; }
+function setMic(on){ $("micDot").classList.toggle("on",on); $("micText").textContent = on?"聞き取り中":"マイク停止中"; }
+
+/* ---------- ボタン ---------- */
+$("startBtn").onclick = start;
+$("againBtn").onclick = start;
+$("nextBtn").onclick = ()=>{ if(running) advance(judge(heardText, order[idx])); };
+$("stopBtn").onclick = finish;
+document.addEventListener("keydown", e=>{ if(running && (e.code==="Space"||e.code==="Enter")){ e.preventDefault(); $("nextBtn").click(); } });
+</script>
+</body>
+</html>
