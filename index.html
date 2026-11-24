@@ -21,6 +21,8 @@
   .primary{background:var(--accent);color:#06121f}
   .secondary{background:#444;color:var(--text)}
   .next{background:var(--warn);color:#2a1d00;font-size:22px;padding:18px}
+  .micbtn{background:#444;color:var(--text);font-size:20px;padding:16px}
+  .micbtn.on{background:var(--ng);color:#fff}
   .topbar{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
   .timer{font-size:44px;font-weight:800;font-variant-numeric:tabular-nums}
   .timer.low{color:var(--ng)}
@@ -83,6 +85,7 @@
     <div class="hint" id="hintLine" style="display:none"></div>
     <div class="heard"><span class="label">聞き取った回答</span><span id="heard"></span></div>
     <div class="feedback" id="feedback"></div>
+    <button class="micbtn" id="micBtn">🎤 マイク OFF（タップでON）</button>
     <button class="next" id="nextBtn">回答終了 → 次へ</button>
     <div class="row"><button class="secondary" id="stopBtn">中止</button></div>
   </section>
@@ -293,13 +296,22 @@ const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&g
 
 /* ---------- 音声認識 ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec=null, recBase=0, recLen=0;
+let rec=null, recBase=0, recLen=0, micWanted=false, micOn=false;
+const IS_MOBILE = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
 if(!SR) $("noSpeech").style.display="block";
 
 function startRec(){
-  if(!SR) return;
+  if(!SR){ setFeedback("このブラウザは音声認識に対応していません"); return; }
+  micWanted = true;
+  if(rec && micOn) return;
+  if(!rec) createRec();
+  recBase=0; recLen=0;
+  try{ rec.start(); }catch(_){}
+}
+function createRec(){
   rec = new SR();
-  rec.lang="en-US"; rec.continuous=true; rec.interimResults=true; rec.maxAlternatives=1;
+  // スマホのChromeは continuous モードが不安定なため、1発話ずつ認識して自動で再開する
+  rec.lang="en-US"; rec.continuous=!IS_MOBILE; rec.interimResults=true; rec.maxAlternatives=1;
   rec.onresult = e => {
     if(!running || locked) return;
     recLen = e.results.length;
@@ -321,14 +333,29 @@ function startRec(){
     }
   };
   rec.onstart = ()=>setMic(true);
-  rec.onend = ()=>{ setMic(false); if(running){ recBase=0; recLen=0; try{rec.start();}catch(_){} } };
-  rec.onerror = e => { if(e.error==="not-allowed") alert("マイクの使用が許可されていません。ブラウザの設定でマイクを許可してください。"); };
-  recBase=0; recLen=0;
-  try{ rec.start(); }catch(_){}
+  rec.onend = ()=>{
+    setMic(false); recBase=0; recLen=0;
+    if(running && micWanted) setTimeout(()=>{ if(running && micWanted && !micOn){ try{rec.start();}catch(_){} } }, 150);
+  };
+  rec.onerror = e => {
+    if(e.error==="not-allowed" || e.error==="service-not-allowed"){
+      micWanted=false; setMic(false);
+      setFeedback("マイクが許可されていません。アドレスバー左のアイコン →「権限」→ マイクを許可してください");
+    } else if(e.error==="audio-capture"){
+      micWanted=false; setMic(false);
+      setFeedback("マイクが見つかりません。他のアプリがマイクを使っていないか確認してください");
+    }
+  };
 }
 function resetRecBuffer(){ recBase = recLen; }
-function stopRec(){ if(rec){ rec.onend=null; try{rec.abort();}catch(_){} } setMic(false); recLen=0; }
-function setMic(on){ $("micDot").classList.toggle("on",on); $("micText").textContent = on?"聞き取り中":"マイク停止中"; }
+function stopRec(){ micWanted=false; if(rec){ try{rec.abort();}catch(_){} } setMic(false); recLen=0; }
+function setMic(on){
+  micOn = on;
+  $("micDot").classList.toggle("on",on); $("micText").textContent = on?"聞き取り中":"マイク停止中";
+  $("micBtn").classList.toggle("on", micWanted);
+  $("micBtn").textContent = micWanted ? "🎤 マイク ON（タップでOFF）" : "🎤 マイク OFF（タップでON）";
+}
+$("micBtn").onclick = ()=>{ if(micWanted){ stopRec(); } else { setFeedback(""); startRec(); setMic(micOn); } };
 
 /* ---------- ボタン ---------- */
 $("startBtn").onclick = start;
