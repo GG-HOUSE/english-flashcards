@@ -296,8 +296,8 @@ const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&g
 
 /* ---------- 音声認識 ---------- */
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec=null, recBase=0, recLen=0, micWanted=false, micOn=false;
-const IS_MOBILE = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+let rec=null, fullText="", baseLen=0, micWanted=false, micOn=false;
+const IS_ANDROID = /Android/i.test(navigator.userAgent);
 if(!SR) $("noSpeech").style.display="block";
 
 function startRec(){
@@ -305,36 +305,42 @@ function startRec(){
   micWanted = true;
   if(rec && micOn) return;
   if(!rec) createRec();
-  recBase=0; recLen=0;
+  fullText=""; baseLen=0;
   try{ rec.start(); }catch(_){}
 }
 function createRec(){
   rec = new SR();
-  // スマホのChromeは continuous モードが不安定なため、1発話ずつ認識して自動で再開する
-  rec.lang="en-US"; rec.continuous=!IS_MOBILE; rec.interimResults=true; rec.maxAlternatives=1;
+  // AndroidのChromeは continuous モードが不安定なため、1発話ずつ認識して自動で再開する
+  // iPhoneは自動再開ができないことがあるため、聞き取りを止めずに続ける
+  rec.lang="en-US"; rec.continuous=!IS_ANDROID; rec.interimResults=true; rec.maxAlternatives=1;
   rec.onresult = e => {
+    // 認識結果全体を1本の文字列にし、「前の問題までに聞き取った文字数」以降を今の回答とみなす
+    // （iPhoneのSafariは1つの結果をずっと伸ばし続けるため、文字数で区切る）
+    let full="";
+    for(let i=0;i<e.results.length;i++) full += e.results[i][0].transcript + " ";
+    fullText = full;
     if(!running || locked) return;
-    recLen = e.results.length;
-    let text="", isFinal=true;
-    for(let i=recBase;i<e.results.length;i++){ text += e.results[i][0].transcript + " "; if(!e.results[i].isFinal) isFinal=false; }
-    text = text.trim();
+    const last = e.results[e.results.length-1];
+    const isFinal = last.isFinal;
+    const text = (full.length >= baseLen ? full.slice(baseLen) : last[0].transcript).trim();
     if(!text) return;
     setHeard(text);
     clearTimeout(settleTimer);
-    const item = order[idx];
-    const r = judge(text, item);
+    const r = judge(text, order[idx]);
     if(isFinal){
-      // 言い終わった（区切りが確定した）→ 判定
       if(r.ok) advance(r);
-      else { setFeedback(r.reason); recBase = e.results.length; } // 言い直しは新しい発話として判定
+      else { setFeedback(r.reason); baseLen = full.length; } // 言い直しは新しい発話として判定
     } else if(r.ok){
       // 途中でも型に合っていれば、言い終わりを少し待ってから正解にする
       settleTimer = setTimeout(()=>{ if(!locked && heardText===text) advance(r); }, SETTLE_MS);
+    } else {
+      // 確定が来ない端末向け：しばらく変化がなければ×の理由を出して言い直しへ
+      settleTimer = setTimeout(()=>{ if(!locked && heardText===text){ setFeedback(r.reason); baseLen = fullText.length; } }, 1500);
     }
   };
   rec.onstart = ()=>setMic(true);
   rec.onend = ()=>{
-    setMic(false); recBase=0; recLen=0;
+    setMic(false); fullText=""; baseLen=0;
     if(running && micWanted) setTimeout(()=>{ if(running && micWanted && !micOn){ try{rec.start();}catch(_){} } }, 150);
   };
   rec.onerror = e => {
@@ -347,8 +353,10 @@ function createRec(){
     }
   };
 }
-function resetRecBuffer(){ recBase = recLen; }
-function stopRec(){ micWanted=false; if(rec){ try{rec.abort();}catch(_){} } setMic(false); recLen=0; }
+function resetRecBuffer(){ baseLen = fullText.length; }
+function stopRec(){ micWanted=false; if(rec){ try{rec.abort();}catch(_){} } setMic(false); fullText=""; baseLen=0; }
+// iPhoneでは画面タップ（ユーザー操作）からでないとマイクを再開できないことがあるため、ボタン操作時に再開を試みる
+function ensureMic(){ if(running && micWanted && !micOn && rec){ try{rec.start();}catch(_){} } }
 function setMic(on){
   micOn = on;
   $("micDot").classList.toggle("on",on); $("micText").textContent = on?"聞き取り中":"マイク停止中";
@@ -360,7 +368,8 @@ $("micBtn").onclick = ()=>{ if(micWanted){ stopRec(); } else { setFeedback(""); 
 /* ---------- ボタン ---------- */
 $("startBtn").onclick = start;
 $("againBtn").onclick = start;
-$("nextBtn").onclick = ()=>{ if(running) advance(judge(heardText, order[idx])); };
+$("nextBtn").onclick = ()=>{ if(running){ advance(judge(heardText, order[idx])); ensureMic(); } };
+$("card").onclick = ensureMic;
 $("stopBtn").onclick = finish;
 document.addEventListener("keydown", e=>{ if(running && (e.code==="Space"||e.code==="Enter")){ e.preventDefault(); $("nextBtn").click(); } });
 </script>
